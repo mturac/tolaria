@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, render, screen, fireEvent, within } from '@testing-library/react'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { StatusBar } from './StatusBar'
@@ -25,6 +25,8 @@ const installedAiAgentsStatus = {
 }
 
 const DEFAULT_WINDOW_WIDTH = 1280
+const originalResizeObserver = window.ResizeObserver
+let resizeObserverCallback: ResizeObserverCallback | null = null
 
 function setWindowWidth(width: number) {
   Object.defineProperty(window, 'innerWidth', {
@@ -54,6 +56,35 @@ function renderDenseStatusBar() {
   )
 }
 
+function mockResizeObserver() {
+  resizeObserverCallback = null
+  class MockResizeObserver implements ResizeObserver {
+    constructor(callback: ResizeObserverCallback) {
+      resizeObserverCallback = callback
+    }
+
+    observe = vi.fn()
+    unobserve = vi.fn()
+    disconnect = vi.fn()
+  }
+
+  Object.defineProperty(window, 'ResizeObserver', {
+    configurable: true,
+    writable: true,
+    value: MockResizeObserver,
+  })
+}
+
+function resizeObservedStatusBar(width: number) {
+  if (!resizeObserverCallback) throw new Error('Expected status bar resize observer to be registered')
+  act(() => {
+    resizeObserverCallback(
+      [{ contentRect: { width } } as ResizeObserverEntry],
+      {} as ResizeObserver,
+    )
+  })
+}
+
 async function expectTooltip(trigger: HTMLElement, ...parts: string[]) {
   act(() => {
     fireEvent.focus(trigger)
@@ -71,6 +102,20 @@ describe('StatusBar', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setWindowWidth(DEFAULT_WINDOW_WIDTH)
+    Object.defineProperty(window, 'ResizeObserver', {
+      configurable: true,
+      writable: true,
+      value: originalResizeObserver,
+    })
+  })
+
+  afterEach(() => {
+    Object.defineProperty(window, 'ResizeObserver', {
+      configurable: true,
+      writable: true,
+      value: originalResizeObserver,
+    })
+    resizeObserverCallback = null
   })
 
   it('does not display the bottom-bar note count readout', () => {
@@ -584,6 +629,21 @@ describe('StatusBar', () => {
     })
     expect(screen.getByTestId('status-commit-push')).toBeInTheDocument()
     expect(screen.getByTestId('status-pulse')).toBeInTheDocument()
+    expect(screen.getByTestId('status-feedback')).toBeInTheDocument()
+  })
+
+  it('uses the measured footer width so constrained layouts stack before controls overlap', () => {
+    mockResizeObserver()
+    setWindowWidth(1280)
+    renderDenseStatusBar()
+
+    resizeObservedStatusBar(880)
+
+    expect(screen.getByTestId('status-bar')).toHaveStyle({
+      flexWrap: 'wrap',
+      height: 'auto',
+    })
+    expect(screen.getByTestId('status-commit-push')).toBeInTheDocument()
     expect(screen.getByTestId('status-feedback')).toBeInTheDocument()
   })
 

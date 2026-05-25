@@ -1,7 +1,7 @@
 import type { AiAgentId, AiAgentsStatus } from '../lib/aiAgents'
 import type { AiModelProvider } from '../lib/aiTargets'
 import type { VaultAiGuidanceStatus } from '../lib/vaultAiGuidance'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { ClaudeCodeStatus } from '../hooks/useClaudeCodeStatus'
 import type { McpStatus } from '../hooks/useMcpStatus'
 import type { ThemeMode } from '../lib/themeMode'
@@ -35,6 +35,11 @@ function getStatusBarLayout(windowWidth: number) {
   }
 }
 
+function getMeasuredStatusBarWidth(element: HTMLElement | null) {
+  const measuredWidth = element?.getBoundingClientRect().width ?? 0
+  return measuredWidth > 0 ? measuredWidth : getWindowWidth()
+}
+
 function useStatusBarTicker() {
   const [, setTick] = useState(0)
 
@@ -44,17 +49,29 @@ function useStatusBarTicker() {
   }, [])
 }
 
-function useStatusBarLayout() {
+function useStatusBarLayout(statusBarRef: RefObject<HTMLElement | null>) {
   const [windowWidth, setWindowWidth] = useState(() => getWindowWidth())
 
   useEffect(() => {
     if (typeof window === 'undefined') return
 
-    const handleResize = () => setWindowWidth(getWindowWidth())
+    const element = statusBarRef.current
+    const setMeasuredWidth = (width = getMeasuredStatusBarWidth(element)) => setWindowWidth(width)
 
+    setMeasuredWidth()
+
+    if (element && typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(([entry]) => {
+        setMeasuredWidth(entry?.contentRect.width)
+      })
+      observer.observe(element)
+      return () => observer.disconnect()
+    }
+
+    const handleResize = () => setMeasuredWidth()
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
-  }, [])
+  }, [statusBarRef])
 
   return getStatusBarLayout(windowWidth)
 }
@@ -122,6 +139,7 @@ interface StatusBarProps {
 
 interface StatusBarFooterProps extends StatusBarProps {
   compact: boolean
+  footerRef: RefObject<HTMLElement | null>
   stacked: boolean
 }
 
@@ -267,10 +285,11 @@ function StatusBarSecondaryFromFooter({
 }
 
 function StatusBarFooter(props: StatusBarFooterProps) {
-  const { compact, stacked } = props
+  const { compact, footerRef, stacked } = props
 
   return (
     <footer
+      ref={footerRef}
       data-testid="status-bar"
       style={{
         minHeight: 30,
@@ -299,11 +318,12 @@ function StatusBarFooter(props: StatusBarFooterProps) {
 
 export function StatusBar(props: StatusBarProps) {
   useStatusBarTicker()
-  const { compact, stacked } = useStatusBarLayout()
+  const statusBarRef = useRef<HTMLElement | null>(null)
+  const { compact, stacked } = useStatusBarLayout(statusBarRef)
 
   return (
     <TooltipProvider>
-      <StatusBarFooter {...props} compact={compact} stacked={stacked} />
+      <StatusBarFooter {...props} compact={compact} footerRef={statusBarRef} stacked={stacked} />
     </TooltipProvider>
   )
 }
