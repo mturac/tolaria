@@ -194,6 +194,33 @@ describe('NoteList sort controls', () => {
     expect(screen.getByTestId('sort-option-status')).toBeInTheDocument()
   })
 
+  it('renders the sort menu in a portal anchored to the trigger', () => {
+    renderNoteList()
+    const trigger = screen.getByTestId('sort-button-__list__')
+
+    Object.defineProperty(window, 'innerWidth', {
+      configurable: true,
+      value: 360,
+    })
+    trigger.getBoundingClientRect = () => ({
+      bottom: 44,
+      height: 24,
+      left: 250,
+      right: 326,
+      top: 20,
+      width: 76,
+      x: 250,
+      y: 20,
+      toJSON: () => ({}),
+    })
+
+    fireEvent.click(trigger)
+
+    const menu = screen.getByTestId('sort-menu-__list__')
+    expect(menu.parentElement).toBe(document.body)
+    expect(menu).toHaveStyle({ left: '156px', top: '48px' })
+  })
+
   it('changes list order when a different sort option is selected', () => {
     openListSortMenu(zamEntries)
 

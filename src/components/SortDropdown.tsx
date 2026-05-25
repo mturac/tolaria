@@ -1,8 +1,10 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import { ArrowUp, ArrowDown } from '@phosphor-icons/react'
 import { translate, type AppLocale, type TranslationKey } from '../lib/i18n'
 import { type SortOption, type SortDirection, getDefaultDirection, SORT_OPTIONS } from '../utils/noteListHelpers'
+import { getAnchoredDropdownLeft } from './propertyDropdownUtils'
 
 interface SortItem {
   value: SortOption
@@ -16,10 +18,22 @@ const SORT_LABEL_KEYS = {
   status: 'noteList.sort.status',
 } satisfies Record<string, TranslationKey>
 const SORT_LABEL_KEYS_BY_OPTION = new Map<string, TranslationKey>(Object.entries(SORT_LABEL_KEYS))
+const SORT_MENU_WIDTH = 170
+const SORT_MENU_OFFSET = 4
 
 type SortMenuAction =
   | { type: 'close' }
   | { type: 'focus'; index: number }
+
+function getSortMenuPosition(trigger: HTMLElement | null) {
+  if (!trigger) return { left: 0, top: 0 }
+
+  const rect = trigger.getBoundingClientRect()
+  return {
+    left: getAnchoredDropdownLeft(rect.right, SORT_MENU_WIDTH, window.innerWidth),
+    top: rect.bottom + SORT_MENU_OFFSET,
+  }
+}
 
 function getLocalizedSortOptionLabel(option: SortOption, locale: AppLocale): string {
   if (option.startsWith('property:')) return option.slice('property:'.length)
@@ -102,6 +116,7 @@ function useSortDropdownState({
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const sortButtonRefs = useRef<Array<HTMLButtonElement | null>>([])
 
   useEffect(() => {
@@ -109,6 +124,7 @@ function useSortDropdownState({
 
     function handlePointerDown(event: MouseEvent) {
       if (containerRef.current?.contains(event.target as Node)) return
+      if (menuRef.current?.contains(event.target as Node)) return
       setOpen(false)
     }
 
@@ -153,6 +169,7 @@ function useSortDropdownState({
     setOpen,
     containerRef,
     triggerRef,
+    menuRef,
     sortButtonRefs,
     handleSelect,
     handleMenuKeyDown,
@@ -205,6 +222,8 @@ function SortDropdownMenu({
   current,
   direction,
   sortItems,
+  triggerRef,
+  menuRef,
   sortButtonRefs,
   locale,
   onKeyDown,
@@ -215,22 +234,34 @@ function SortDropdownMenu({
   current: SortOption
   direction: SortDirection
   sortItems: SortItem[]
+  triggerRef: React.RefObject<HTMLButtonElement | null>
+  menuRef: React.RefObject<HTMLDivElement | null>
   sortButtonRefs: React.MutableRefObject<Array<HTMLButtonElement | null>>
   locale: AppLocale
   onKeyDown: (event: React.KeyboardEvent<HTMLDivElement>) => void
   onSelect: (option: SortOption, nextDirection: SortDirection) => void
 }) {
+  useLayoutEffect(() => {
+    if (!open) return
+    const node = menuRef.current
+    if (!node) return
+    const menuPosition = getSortMenuPosition(triggerRef.current)
+    node.style.left = `${menuPosition.left}px`
+    node.style.top = `${menuPosition.top}px`
+  }, [menuRef, open, triggerRef])
+
   if (!open) return null
 
   const hasCustom = sortItems.length > SORT_OPTIONS.length
   const builtInOptionCount = SORT_OPTIONS.length
 
-  return (
+  return createPortal(
     <div
+      ref={menuRef}
       role="menu"
       aria-label={translate(locale, 'noteList.sort.menu', { label: groupLabel })}
       className="absolute right-0 top-full mt-1 rounded-md border border-border bg-popover p-1 shadow-md"
-      style={{ width: 170, maxHeight: 280, overflowY: 'auto' }}
+      style={{ position: 'fixed', right: 'auto', top: 0, left: 0, marginTop: 0, width: SORT_MENU_WIDTH, maxHeight: 280, overflowY: 'auto', zIndex: 12001 }}
       onKeyDown={onKeyDown}
       data-testid={`sort-menu-${groupLabel}`}
     >
@@ -251,7 +282,8 @@ function SortDropdownMenu({
           onSelect={onSelect}
         />
       ))}
-    </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -269,6 +301,7 @@ export function SortDropdown({ groupLabel, current, direction, customProperties,
     setOpen,
     containerRef,
     triggerRef,
+    menuRef,
     sortButtonRefs,
     handleSelect,
     handleMenuKeyDown,
@@ -296,6 +329,8 @@ export function SortDropdown({ groupLabel, current, direction, customProperties,
         current={current}
         direction={direction}
         sortItems={sortItems}
+        triggerRef={triggerRef}
+        menuRef={menuRef}
         sortButtonRefs={sortButtonRefs}
         locale={locale}
         onKeyDown={handleMenuKeyDown}
